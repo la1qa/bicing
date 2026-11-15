@@ -10,11 +10,11 @@ class ExtractionResult:
     destination: Path
     extracted: bool
     error: str | None = None
-def extract_archives(historical_dir: str | Path, destination: str | Path) -> list[ExtractionResult]:
+def extract_archives(dir: str | Path, destination: str | Path) -> list[ExtractionResult]:
     """Extract each archive once without overwriting existing extracted files."""
     target = Path(destination); target.mkdir(parents=True, exist_ok=True)
     results = []
-    for archive in sorted(Path(historical_dir).glob("*.7z")):
+    for archive in sorted(Path(dir).glob("*.7z")):
         out = target / archive.stem; marker = out / ".extracted"
         if marker.exists():
             results.append(ExtractionResult(archive, out, False)); continue
@@ -26,3 +26,16 @@ def extract_archives(historical_dir: str | Path, destination: str | Path) -> lis
             LOGGER.error("Could not extract %s: %s", archive, exc)
             results.append(ExtractionResult(archive, out, False, str(exc)))
     return results
+
+
+def extract_metadata_archives(
+    source: str | Path | None = None,
+    destination: str | Path | None = None,
+) -> list[ExtractionResult]:
+    """Extract station-information archives into a separate output directory."""
+    from config import METADATA_ARCHIVE_DIR, METADATA_EXTRACTED_DIR
+
+    return extract_archives(
+        source or METADATA_ARCHIVE_DIR,
+        destination or METADATA_EXTRACTED_DIR,
+    )

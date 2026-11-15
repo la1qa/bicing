@@ -76,6 +76,51 @@ For the archives currently stored directly in `data/raw/`, use:
 python -c "from config import RAW_DATA_DIR, EXTRACTED_DATA_DIR; from src.ingestion.extract import extract_archives; print(extract_archives(RAW_DATA_DIR, EXTRACTED_DATA_DIR))"
 ```
 
+### Download station metadata archives
+
+Station metadata archives are published in a separate Barcelona open-data
+dataset. Discover and download them automatically through its CKAN API:
+
+```powershell
+python -m src.cli download-metadata
+```
+
+Download only a selected month:
+
+```powershell
+python -m src.cli download-metadata --month 2026_01
+```
+
+Files are saved under `data/raw/metadata/`, are never overwritten, and are
+downloaded through temporary `.part` files so interrupted downloads are not
+mistaken for complete archives. Extract them separately:
+
+```powershell
+python -m src.cli extract `
+  --source data/raw/metadata `
+  --destination data/processed/metadata_extracted
+```
+
+Or use the dedicated command with the configured metadata directories:
+
+```powershell
+python -m src.cli extract-metadata
+```
+
+The metadata archive schema must be inspected before adding its database
+mapping. The importer supports the observed station fields (`station_id`,
+`name`, `physical_configuration`, `lat`, `lon`, `altitude`, `capacity`, and
+`last_updated`) and does not treat metadata as status data.
+
+Import metadata into both the current station table and the versioned history:
+
+```powershell
+python -m src.cli import-metadata
+```
+
+This updates `stations` with the latest metadata encountered and inserts
+non-duplicate versions into `station_metadata_history`.
+
 ## 5. Import extracted files
 
 Import all supported CSV and JSON files recursively with the CLI:
@@ -152,8 +197,8 @@ archives to a storage location with enough capacity:
 python3 -m venv .venv
 . .venv/bin/activate
 python -m pip install -r requirements.txt
-python -m src.cli extract --source /srv/bicing/data/raw/historical
-python -m src.cli import --source /srv/bicing/data/processed/extracted \
+python -m src.cli extract --source ~/bicing/data/raw/historical
+python -m src.cli import --source ~/bicing/data/processed/extracted \
   --database /srv/bicing/data/bicing.sqlite
 uvicorn src.api.main:app --host 0.0.0.0 --port 8000
 ```

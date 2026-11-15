@@ -7,5 +7,6 @@ __pycache__/
 *.db
 data/processed/*
 data/raw/historical/*
+data/raw/metadata/*
 data/raw/samples/*
 !data/.gitkeep

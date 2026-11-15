@@ -13,7 +13,7 @@ from src.database.db import (
     initialize_database,
     session_scope,
 )
-from src.ingestion.import_data import import_files
+from src.ingestion.import_data import import_files, import_metadata_files
 from src.processing.transformations import normalize_timestamp
 from src.processing.validation import validate_status_frame
 from src.api.main import create_app
@@ -49,6 +49,23 @@ def test_import_processes_csv_in_configured_chunks(tmp_path):
     report = import_files(engine, tmp_path, batch_size=2)
     assert report.records_processed == 5
     assert report.imported == 5
+
+
+def test_metadata_import_populates_current_and_history(tmp_path):
+    source = tmp_path / "metadata.csv"
+    source.write_text(
+        "station_id,name,physical_configuration,lat,lon,altitude,capacity,last_updated\n"
+        "1,Central,ELECTRICBIKESTATION,41.1,2.1,10,20,1714514402\n",
+        encoding="utf-8",
+    )
+    engine = initialize_database(tmp_path / "metadata.sqlite")
+    report = import_metadata_files(engine, tmp_path, batch_size=1)
+    assert report.imported == 1
+    with session_scope(engine) as session:
+        station = session.get(Station, "1")
+        assert station.name == "Central"
+        assert station.capacity == 20
+        assert session.query(StationMetadataHistory).count() == 1
 
 
 def test_database_schema_has_composite_status_index(tmp_path):
