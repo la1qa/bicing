@@ -99,8 +99,9 @@ def _metadata_resources() -> list[dict[str, str]]:
 def download_timeline_archives(
     destination: str | Path,
     months: set[str] | None = None,
+    start_month: str | None = None,
 ) -> list[DownloadResult]:
-    """Download timeline archives discovered from CKAN, without overwriting files."""
+    """Download timeline archives from an optional inclusive starting month."""
     target = Path(destination)
     target.mkdir(parents=True, exist_ok=True)
     resources = _timeline_resources()
@@ -109,6 +110,8 @@ def download_timeline_archives(
         name = resource["name"]
         month = name[:7]
         if months and month not in months:
+            continue
+        if start_month and month < start_month:
             continue
         destination_file = target / name
         if destination_file.exists():

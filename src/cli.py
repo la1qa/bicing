@@ -14,6 +14,7 @@ from src.database.db import initialize_database
 from src.ingestion.extract import extract_archives, extract_metadata_archives
 from src.ingestion.download import download_metadata_archives, download_timeline_archives
 from src.ingestion.import_data import DEFAULT_BATCH_SIZE, import_files, import_metadata_files
+from src.maintenance import prune_before
 
 
 def main() -> None:
@@ -29,6 +30,10 @@ def main() -> None:
     download_timeline = subparsers.add_parser("download-timeline")
     download_timeline.add_argument("--destination", default=str(HISTORICAL_DIR))
     download_timeline.add_argument("--month", action="append", help="Month such as 2026_01; repeat for multiple months")
+    download_timeline.add_argument(
+        "--start-month",
+        help="Inclusive first month such as 2024_01",
+    )
     download_metadata = subparsers.add_parser("download-metadata")
     download_metadata.add_argument("--destination", default=str(METADATA_ARCHIVE_DIR))
     download_metadata.add_argument("--month", action="append", help="Month such as 2026_01; repeat for multiple months")
@@ -50,6 +55,13 @@ def main() -> None:
     metadata_importer.add_argument("--source", default=str(METADATA_EXTRACTED_DIR))
     metadata_importer.add_argument("--database", default=str(DATABASE_PATH))
     metadata_importer.add_argument("--batch-size", type=int, default=DEFAULT_BATCH_SIZE)
+    prune = subparsers.add_parser("prune")
+    prune.add_argument("--start-date", required=True, help="Keep data on/after YYYY-MM-DD")
+    prune.add_argument("--database", default=str(DATABASE_PATH))
+    prune.add_argument("--historical", default=str(HISTORICAL_DIR))
+    prune.add_argument("--extracted", default=str(EXTRACTED_DATA_DIR))
+    prune.add_argument("--metadata", default=str(METADATA_ARCHIVE_DIR))
+    prune.add_argument("--metadata-extracted", default=str(METADATA_EXTRACTED_DIR))
     subparsers.add_parser("benchmark")
     args = parser.parse_args()
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
@@ -61,7 +73,11 @@ def main() -> None:
             print(result)
     elif args.command == "download-timeline":
         months = set(args.month) if args.month else None
-        for result in download_timeline_archives(args.destination, months):
+        for result in download_timeline_archives(
+            args.destination,
+            months,
+            args.start_month,
+        ):
             print(result)
     elif args.command == "download-metadata":
         months = set(args.month) if args.month else None
@@ -83,6 +99,15 @@ def main() -> None:
             batch_size=args.batch_size,
         )
         print(report)
+    elif args.command == "prune":
+        print(prune_before(
+            initialize_database(args.database),
+            args.start_date,
+            historical_dir=args.historical,
+            extracted_dir=args.extracted,
+            metadata_dir=args.metadata,
+            metadata_extracted_dir=args.metadata_extracted,
+        ))
     else:
         from src.benchmark import benchmark
 

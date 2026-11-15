@@ -12,6 +12,7 @@ EXTRACTED_DATA_DIR = PROCESSED_DATA_DIR / "extracted"
 METADATA_EXTRACTED_DIR = PROCESSED_DATA_DIR / "metadata_extracted"
 DATABASE_PATH = DATA_DIR / "bicing.sqlite"
 TIMEZONE = "Europe/Madrid"
+DATA_START_DATE = "2024-01-01"
 
 # Backwards-compatible names used by the original scripts.
 ROOT = PROJECT_ROOT

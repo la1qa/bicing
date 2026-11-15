@@ -17,9 +17,14 @@ echo "Installing project dependencies..."
 BATCH_SIZE="${BICING_BATCH_SIZE:-5000}"
 API_HOST="${BICING_API_HOST:-0.0.0.0}"
 API_PORT="${BICING_API_PORT:-8000}"
+DATA_START_DATE="${BICING_DATA_START_DATE:-2024-01-01}"
+DATA_START_MONTH="${DATA_START_DATE:0:7}"
+
+echo "Removing data older than $DATA_START_DATE..."
+"$PYTHON" -m src.cli prune --start-date "$DATA_START_DATE"
 
 echo "Downloading historical station-status archives..."
-"$PYTHON" -m src.cli download-timeline
+"$PYTHON" -m src.cli download-timeline --start-month "$DATA_START_MONTH"
 
 echo "Downloading the latest station-metadata archive..."
 "$PYTHON" -m src.cli download-metadata --latest

@@ -14,10 +14,15 @@ from src.database.db import (
     session_scope,
 )
 from src.ingestion.import_data import import_files, import_metadata_files
-from src.ingestion.download import _timeline_resources, download_metadata_archives
+from src.ingestion.download import (
+    _timeline_resources,
+    download_metadata_archives,
+    download_timeline_archives,
+)
 from src.processing.transformations import normalize_timestamp
 from src.processing.validation import validate_status_frame
 from src.api.main import create_app
+from src.maintenance import prune_before
 
 def test_timestamp_normalizes_to_utc():
     assert normalize_timestamp("2024-01-01T10:00:00+01:00").hour == 9
@@ -134,6 +139,61 @@ def test_latest_metadata_download_only_selects_newest_month(tmp_path, monkeypatc
     ]
     assert results[0].downloaded is False
     assert latest.read_bytes() == b"already downloaded"
+
+
+def test_timeline_download_respects_inclusive_start_month(tmp_path, monkeypatch):
+    monkeypatch.setattr(
+        "src.ingestion.download._timeline_resources",
+        lambda: [
+            {"name": "2023_12_Desembre_BicingNou_ESTACIONS.7z", "url": "old"},
+            {"name": "2024_01_Gener_BicingNou_ESTACIONS.7z", "url": "start"},
+        ],
+    )
+    (tmp_path / "2024_01_Gener_BicingNou_ESTACIONS.7z").write_bytes(b"archive")
+    results = download_timeline_archives(tmp_path, start_month="2024_01")
+    assert [result.name for result in results] == [
+        "2024_01_Gener_BicingNou_ESTACIONS.7z"
+    ]
+
+
+def test_prune_removes_data_before_start_date(tmp_path):
+    database = tmp_path / "prune.sqlite"
+    historical = tmp_path / "historical"
+    extracted = tmp_path / "extracted"
+    metadata = tmp_path / "metadata"
+    metadata_extracted = tmp_path / "metadata-extracted"
+    for directory in (historical, extracted, metadata, metadata_extracted):
+        directory.mkdir()
+    (historical / "2023_12_old.7z").write_bytes(b"old")
+    (historical / "2024_01_keep.7z").write_bytes(b"keep")
+    (extracted / "2023_12_old").mkdir()
+    (extracted / "2024_01_keep").mkdir()
+    engine = initialize_database(database)
+    with session_scope(engine) as session:
+        session.add(Station(station_id="1"))
+        session.add_all([
+            StationStatus(
+                station_id="1",
+                timestamp=datetime(2023, 12, 31, tzinfo=timezone.utc),
+            ),
+            StationStatus(
+                station_id="1",
+                timestamp=datetime(2024, 1, 1, tzinfo=timezone.utc),
+            ),
+        ])
+    report = prune_before(
+        engine,
+        "2024-01-01",
+        historical_dir=historical,
+        extracted_dir=extracted,
+        metadata_dir=metadata,
+        metadata_extracted_dir=metadata_extracted,
+    )
+    assert report.status_rows == 1
+    assert not (historical / "2023_12_old.7z").exists()
+    assert not (extracted / "2023_12_old").exists()
+    with session_scope(engine) as session:
+        assert session.query(StationStatus).count() == 1
 
 
 def test_database_schema_has_composite_status_index(tmp_path):

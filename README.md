@@ -157,6 +157,18 @@ The default host is `0.0.0.0`, which allows access from another machine on the
 LAN. Stop the API with `Ctrl+C`; rerunning the script skips existing downloads,
 completed extractions, and already imported records.
 
+The default historical data window starts at `2024-01-01`, configured as
+`DATA_START_DATE` in [config.py](config.py). The setup script converts this to
+an inclusive archive month filter (`2024_01`) to avoid downloading older
+archives. Override it for a different window with, for example,
+`BICING_DATA_START_DATE=2023-01-01 ./setup_and_run.sh`.
+
+Before downloading, the setup script also prunes archives, extracted
+directories, status observations, and metadata-history rows older than this
+date from the local Arduino dataset. Current station metadata is preserved.
+This deletion is intentional; export or back up the database first if older
+data may be needed for later analysis.
+
 ## 5. Import extracted files
 
 Import all supported CSV and JSON files recursively with the CLI:
