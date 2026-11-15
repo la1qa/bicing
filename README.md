@@ -156,6 +156,15 @@ FastAPI server after the database is ready. Configure the server with:
 BICING_API_HOST=0.0.0.0 BICING_API_PORT=8000 ./setup_and_run.sh
 ```
 
+After setup, start only the API without repeating ingestion:
+
+```bash
+sh launchAPI.sh
+```
+
+This uses `.venv/bin/python -m uvicorn`, so a system-wide `uvicorn` command is
+not required.
+
 The default host is `0.0.0.0`, which allows access from another machine on the
 LAN. Stop the API with `Ctrl+C`; rerunning the script skips existing downloads,
 completed extractions, and already imported records.
