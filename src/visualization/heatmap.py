@@ -12,7 +12,12 @@ import requests
 from branca.colormap import LinearColormap
 from pyproj import Transformer
 
-Metric = Literal["available_bikes", "available_docks"]
+Metric = Literal[
+    "mechanical_bikes",
+    "ebikes",
+    "available_bikes",
+    "available_docks",
+]
 BARCELONA_BOUNDS = (2.05, 2.25, 41.30, 41.47)
 PROJECTED_CRS = "EPSG:25831"
 WGS84 = "EPSG:4326"
@@ -32,6 +37,10 @@ class StationObservation:
 
     def value(self, metric: Metric) -> float | None:
         """Return the selected availability metric, preserving missing data."""
+        if metric == "mechanical_bikes":
+            return self.mechanical_bikes
+        if metric == "ebikes":
+            return self.ebikes
         if metric == "available_docks":
             return self.docks
         values = [value for value in (self.mechanical_bikes, self.ebikes) if value is not None]
@@ -146,6 +155,7 @@ def render_heatmap(
     metric: Metric,
     timestamp: str,
     bandwidth_m: float,
+    legend_caption: str | None = None,
 ) -> folium.Map:
     """Render a KDE grid as a smooth Folium image overlay."""
     west, east, south, north = bounds
@@ -167,7 +177,7 @@ def render_heatmap(
             colors=["#313695", "#74add1", "#fee090", "#f46d43", "#a50026"],
             vmin=0,
             vmax=maximum,
-            caption=_metric_label(metric),
+            caption=legend_caption or _metric_label(metric),
         ).add_to(fmap)
     folium.LayerControl().add_to(fmap)
     fmap.get_root().header.add_child(
@@ -205,6 +215,8 @@ def _gradient(values: np.ndarray) -> np.ndarray:
 
 def _metric_label(metric: Metric) -> str:
     return {
+        "mechanical_bikes": "Mechanical bikes",
+        "ebikes": "E-bikes",
         "available_bikes": "Available bikes (mechanical + electric)",
         "available_docks": "Available docks",
     }[metric]

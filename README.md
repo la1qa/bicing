@@ -332,16 +332,44 @@ sh .\run_heatmap.sh
 ```
 
 In the sidebar, select a date, then one of the actual snapshot times returned
-for that date. Choose `Available bikes` or `Available docks` and adjust the
-Gaussian bandwidth in metres. The client makes one request for the selected
-snapshot and renders a continuous KDE surface over OpenStreetMap; it does not
-draw station markers.
+for that date. Choose either `Gaussian spatial intensity` or
+`Walking-time accessibility`.
+
+Gaussian mode supports `Available bikes` or `Available docks` and an editable
+bandwidth in metres. Walking mode supports mechanical bikes, e-bikes, total
+bikes, and docks, with 2, 5, 10, and 15-minute thresholds. The client makes
+one request for the selected snapshot and renders a continuous surface over
+OpenStreetMap; it does not draw station markers.
 
 The KDE projects WGS84 station coordinates into EPSG:25831 (ETRS89 / UTM zone
 31N), so bandwidths represent metres. Each grid cell receives the sum of
 station availability weighted by a Gaussian distance-decay kernel. Missing
 coordinates or missing metric values are excluded, and the first version uses
 a fixed Barcelona bounding box rather than computing a city boundary.
+
+Walking mode downloads an OSM pedestrian graph on its first use and caches a
+projected GraphML copy at `data/processed/barcelona_walk.graphml`. Edge travel
+time is estimated from edge length at 1.25 m/s. Each raster cell is snapped
+to its nearest pedestrian-network node. For each station, a cutoff Dijkstra
+search finds reachable nodes within the selected threshold; the resulting
+station-to-cell boolean matrix is saved as a compressed `.npz` file beside
+the GraphML graph. Changing the snapshot or metric then only multiplies that
+matrix by the new availability values. Overlapping catchments are therefore
+additive: the value means the sum of available units at all reachable stations,
+not a journey count or a probability of service. Cells more than 100 metres
+from the pedestrian network and stations that cannot be snapped to it are left
+at zero. Routing is repeated only when the pedestrian graph, station
+coordinates/order, threshold, grid, bounds, or snap distance changes.
+
+The reachability cache is named `barcelona_walk.accessibility-<key>.npz`.
+To clear the walking caches and force a fresh calculation, stop Streamlit and
+remove the graph plus its accessibility files from the configured cache
+directory, for example:
+
+```bash
+rm -f data/processed/barcelona_walk.graphml \
+  data/processed/barcelona_walk.accessibility-*.npz
+```
 
 ## Performance and integrity considerations
 
