@@ -33,9 +33,14 @@ def main() -> None:
     download_metadata.add_argument("--destination", default=str(METADATA_ARCHIVE_DIR))
     download_metadata.add_argument("--month", action="append", help="Month such as 2026_01; repeat for multiple months")
     importer = subparsers.add_parser("import")
-    importer.add_argument("--source", default=str(EXTRACTED_DATA_DIR))
+    importer.add_argument("--source")
     importer.add_argument("--database", default=str(DATABASE_PATH))
     importer.add_argument("--batch-size", type=int, default=DEFAULT_BATCH_SIZE)
+    importer.add_argument(
+        "--metadata",
+        action="store_true",
+        help="Import station metadata instead of station-status observations",
+    )
     metadata_importer = subparsers.add_parser("import-metadata")
     metadata_importer.add_argument("--source", default=str(METADATA_EXTRACTED_DIR))
     metadata_importer.add_argument("--database", default=str(DATABASE_PATH))
@@ -58,10 +63,12 @@ def main() -> None:
         for result in download_metadata_archives(args.destination, months):
             print(result)
     elif args.command == "import":
-        report = import_files(
-            initialize_database(args.database),
-            args.source,
-            batch_size=args.batch_size,
+        source = args.source or (
+            METADATA_EXTRACTED_DIR if args.metadata else EXTRACTED_DATA_DIR
+        )
+        importer_function = import_metadata_files if args.metadata else import_files
+        report = importer_function(
+            initialize_database(args.database), source, batch_size=args.batch_size
         )
         print(report)
     elif args.command == "import-metadata":

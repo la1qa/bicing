@@ -14,6 +14,7 @@ from src.database.db import (
     session_scope,
 )
 from src.ingestion.import_data import import_files, import_metadata_files
+from src.ingestion.download import _timeline_resources
 from src.processing.transformations import normalize_timestamp
 from src.processing.validation import validate_status_frame
 from src.api.main import create_app
@@ -66,6 +67,28 @@ def test_metadata_import_populates_current_and_history(tmp_path):
         assert station.name == "Central"
         assert station.capacity == 20
         assert session.query(StationMetadataHistory).count() == 1
+
+
+def test_timeline_resource_discovery_selects_status_archives(monkeypatch):
+    class Response:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+        def read(self):
+            return (
+                b'{"success": true, "result": {"resources": ['
+                b'{"name": "2026_05_Maig_BicingNou_ESTACIONS.7z", "url": "status"},'
+                b'{"name": "2026_05_Maig_BicingNou_INFORMACIO.7z", "url": "metadata"}]}}'
+            )
+
+    monkeypatch.setattr("urllib.request.urlopen", lambda *_args, **_kwargs: Response())
+    assert _timeline_resources() == [{
+        "name": "2026_05_Maig_BicingNou_ESTACIONS.7z",
+        "url": "status",
+    }]
 
 
 def test_database_schema_has_composite_status_index(tmp_path):

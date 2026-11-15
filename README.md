@@ -194,12 +194,33 @@ On the UNO Q Linux environment, install Python and copy the project and
 archives to a storage location with enough capacity:
 
 ```bash
+cd ~/bicing
 python3 -m venv .venv
 . .venv/bin/activate
 python -m pip install -r requirements.txt
-python -m src.cli extract --source ~/bicing/data/raw/historical
-python -m src.cli import --source ~/bicing/data/processed/extracted \
-  --database /srv/bicing/data/bicing.sqlite
+
+# Historical station-status data
+python -m src.cli extract \
+  --source /home/arduino/bicing/data/raw/historical \
+  --destination /home/arduino/bicing/data/processed/extracted
+python -m src.cli import \
+  --source /home/arduino/bicing/data/processed/extracted \
+  --database /home/arduino/bicing/data/bicing.sqlite
+
+# Or import station metadata through the same command
+python -m src.cli import \
+  --metadata \
+  --source /home/arduino/bicing/data/processed/metadata_extracted \
+  --database /home/arduino/bicing/data/bicing.sqlite
+
+# Station metadata, if it has also been copied to the device
+python -m src.cli extract-metadata \
+  --source /home/arduino/bicing/data/raw/metadata \
+  --destination /home/arduino/bicing/data/processed/metadata_extracted
+python -m src.cli import-metadata \
+  --source /home/arduino/bicing/data/processed/metadata_extracted \
+  --database /home/arduino/bicing/data/bicing.sqlite
+
 uvicorn src.api.main:app --host 0.0.0.0 --port 8000
 ```
 
