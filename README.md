@@ -91,10 +91,11 @@ Download only a selected month:
 python -m src.cli download-metadata --month 2026_01
 ```
 
-For the normal pipeline, download only the newest metadata archive:
+For the normal pipeline, import the latest station metadata directly from the
+live GBFS JSON endpoint:
 
 ```bash
-python -m src.cli download-metadata --latest
+python -m src.cli import-live-metadata
 ```
 
 Files are saved under `data/raw/metadata/`, are never overwritten, and are
@@ -136,15 +137,17 @@ chmod +x setup_and_run.sh
 ./setup_and_run.sh
 ```
 
-The script downloads all available station-status archives but only the newest
-station-metadata archive, then extracts and imports both datasets. Every step
-is repeatable: existing downloads are not overwritten, completed extractions
-are skipped, and database uniqueness rules skip already imported records.
+The script downloads station-status archives from the configured start date,
+imports live station metadata from JSON, then extracts the archives and starts
+the API. If an archive has already been extracted, it is not downloaded again.
+Every step is repeatable: completed extractions are skipped and database
+uniqueness rules skip already imported records.
 Use `BICING_BATCH_SIZE=1000 ./setup_and_run.sh` to change the import batch size.
 
-The metadata downloader remains history-capable. To build a metadata history
-study later, run `python -m src.cli download-metadata` without `--latest`,
-then extract and import the additional archives.
+The metadata archive downloader remains history-capable. To build a metadata
+history study later, run `python -m src.cli download-metadata`, then extract
+and import the additional archives with `extract-metadata` and
+`import-metadata`.
 
 The script also creates `.venv`, installs `requirements.txt`, and starts the
 FastAPI server after the database is ready. Configure the server with:

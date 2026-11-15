@@ -6,6 +6,7 @@ import logging
 from pathlib import Path
 import time
 from typing import Any, Iterator
+import urllib.request
 
 import pandas as pd
 from sqlalchemy import or_, select
@@ -201,6 +202,46 @@ def import_metadata_files(
         except (OSError, ValueError, json.JSONDecodeError, KeyError) as exc:
             LOGGER.error("Could not import metadata %s: %s", path, exc)
             report.errors.append(f"{path.name}: {exc}")
+    report.total_seconds = time.perf_counter() - started
+    return report
+
+
+def import_live_metadata(
+    engine,
+    url: str,
+) -> ImportReport:
+    """Import current station metadata directly from a GBFS JSON endpoint."""
+    started = time.perf_counter()
+    report = ImportReport()
+    with urllib.request.urlopen(url) as response:
+        payload = json.load(response)
+    stations = payload.get("data", {}).get("stations")
+    if not isinstance(stations, list):
+        raise ValueError("Live metadata response has no data.stations list")
+    valid_from = normalize_timestamp(payload.get("last_updated"))
+    if valid_from is None:
+        raise ValueError("Live metadata response has no valid last_updated timestamp")
+    rows = []
+    for station in stations:
+        if not isinstance(station, dict) or station.get("station_id") is None:
+            report.skipped += 1
+            continue
+        rows.append({
+            "station_id": _normalize_station_id(station["station_id"]),
+            "valid_from": valid_from,
+            "latitude": _number_or_none(station.get("lat")),
+            "longitude": _number_or_none(station.get("lon")),
+            "altitude": _number_or_none(station.get("altitude")),
+            "capacity": _integer_or_none(station.get("capacity")),
+            "name": _optional_value(station.get("name")),
+            "physical_configuration": _optional_value(
+                station.get("physical_configuration")
+            ),
+        })
+    report.records_processed = len(stations)
+    inserted, duplicates = _insert_metadata_batch(engine, rows)
+    report.imported = inserted
+    report.skipped += duplicates
     report.total_seconds = time.perf_counter() - started
     return report
 

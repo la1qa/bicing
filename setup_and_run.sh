@@ -24,19 +24,15 @@ echo "Removing data older than $DATA_START_DATE..."
 "$PYTHON" -m src.cli prune --start-date "$DATA_START_DATE"
 
 echo "Downloading historical station-status archives..."
-"$PYTHON" -m src.cli download-timeline --start-month "$DATA_START_MONTH"
-
-echo "Downloading the latest station-metadata archive..."
-"$PYTHON" -m src.cli download-metadata --latest
+"$PYTHON" -m src.cli download-timeline \
+    --start-month "$DATA_START_MONTH" \
+    --extracted "$ROOT_DIR/data/processed/extracted"
 
 echo "Extracting station-status archives..."
 "$PYTHON" -m src.cli extract
 
-echo "Extracting the latest station-metadata archive..."
-"$PYTHON" -m src.cli extract-metadata
-
 echo "Importing station metadata..."
-"$PYTHON" -m src.cli import-metadata --batch-size "$BATCH_SIZE"
+"$PYTHON" -m src.cli import-live-metadata
 
 echo "Importing station-status observations..."
 "$PYTHON" -m src.cli import --batch-size "$BATCH_SIZE"

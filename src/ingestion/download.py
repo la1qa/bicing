@@ -15,6 +15,10 @@ TIMELINE_PACKAGE_API = (
     "https://opendata-ajuntament.barcelona.cat/data/api/3/action/"
     "package_show?id=estat-estacions-bicing"
 )
+LIVE_METADATA_URL = (
+    "https://barcelona.publicbikesystem.net/customer/gbfs/v2/en/"
+    "station_information"
+)
 
 
 @dataclass(frozen=True)
@@ -100,8 +104,9 @@ def download_timeline_archives(
     destination: str | Path,
     months: set[str] | None = None,
     start_month: str | None = None,
+    extracted_directory: str | Path | None = None,
 ) -> list[DownloadResult]:
-    """Download timeline archives from an optional inclusive starting month."""
+    """Download timeline archives, skipping archives already extracted."""
     target = Path(destination)
     target.mkdir(parents=True, exist_ok=True)
     resources = _timeline_resources()
@@ -116,6 +121,11 @@ def download_timeline_archives(
         destination_file = target / name
         if destination_file.exists():
             results.append(DownloadResult(name, destination_file, False))
+            continue
+        if extracted_directory is not None and (
+            Path(extracted_directory) / Path(name).stem / ".extracted"
+        ).exists():
+            results.append(DownloadResult(name, None, False))
             continue
         temporary_file = destination_file.with_suffix(destination_file.suffix + ".part")
         try:

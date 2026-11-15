@@ -14,6 +14,7 @@ from src.database.db import (
     session_scope,
 )
 from src.ingestion.import_data import import_files, import_metadata_files
+from src.ingestion.import_data import import_live_metadata
 from src.ingestion.download import (
     _timeline_resources,
     download_metadata_archives,
@@ -154,6 +155,62 @@ def test_timeline_download_respects_inclusive_start_month(tmp_path, monkeypatch)
     assert [result.name for result in results] == [
         "2024_01_Gener_BicingNou_ESTACIONS.7z"
     ]
+
+
+def test_timeline_download_skips_archive_with_extraction_marker(tmp_path, monkeypatch):
+    extracted = tmp_path / "extracted" / "2024_01_Gener_BicingNou_ESTACIONS"
+    extracted.mkdir(parents=True)
+    (extracted / ".extracted").touch()
+    monkeypatch.setattr(
+        "src.ingestion.download._timeline_resources",
+        lambda: [{
+            "name": "2024_01_Gener_BicingNou_ESTACIONS.7z",
+            "url": "not-downloaded",
+        }],
+    )
+    results = download_timeline_archives(
+        tmp_path / "raw",
+        start_month="2024_01",
+        extracted_directory=tmp_path / "extracted",
+    )
+    assert results[0].downloaded is False
+    assert results[0].destination is None
+
+
+def test_live_metadata_json_import(tmp_path, monkeypatch):
+    payload = {
+        "last_updated": 1714514400,
+        "data": {"stations": [{
+            "station_id": "1",
+            "name": "Live station",
+            "lat": 41.1,
+            "lon": 2.1,
+            "altitude": 10,
+            "capacity": 20,
+            "physical_configuration": "ELECTRICBIKESTATION",
+        }]},
+    }
+
+    class Response:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+        def read(self, *_args):
+            import json
+            return json.dumps(payload).encode()
+
+    monkeypatch.setattr(
+        "src.ingestion.import_data.urllib.request.urlopen",
+        lambda *_args, **_kwargs: Response(),
+    )
+    engine = initialize_database(tmp_path / "live.sqlite")
+    report = import_live_metadata(engine, "https://example.test/stations")
+    assert report.imported == 1
+    with session_scope(engine) as session:
+        assert session.get(Station, "1").name == "Live station"
 
 
 def test_prune_removes_data_before_start_date(tmp_path):

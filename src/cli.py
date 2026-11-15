@@ -13,7 +13,12 @@ from config import (
 from src.database.db import initialize_database
 from src.ingestion.extract import extract_archives, extract_metadata_archives
 from src.ingestion.download import download_metadata_archives, download_timeline_archives
-from src.ingestion.import_data import DEFAULT_BATCH_SIZE, import_files, import_metadata_files
+from src.ingestion.import_data import (
+    DEFAULT_BATCH_SIZE,
+    import_files,
+    import_live_metadata,
+    import_metadata_files,
+)
 from src.maintenance import prune_before
 
 
@@ -34,6 +39,7 @@ def main() -> None:
         "--start-month",
         help="Inclusive first month such as 2024_01",
     )
+    download_timeline.add_argument("--extracted")
     download_metadata = subparsers.add_parser("download-metadata")
     download_metadata.add_argument("--destination", default=str(METADATA_ARCHIVE_DIR))
     download_metadata.add_argument("--month", action="append", help="Month such as 2026_01; repeat for multiple months")
@@ -55,6 +61,9 @@ def main() -> None:
     metadata_importer.add_argument("--source", default=str(METADATA_EXTRACTED_DIR))
     metadata_importer.add_argument("--database", default=str(DATABASE_PATH))
     metadata_importer.add_argument("--batch-size", type=int, default=DEFAULT_BATCH_SIZE)
+    live_metadata = subparsers.add_parser("import-live-metadata")
+    live_metadata.add_argument("--url", default="https://barcelona.publicbikesystem.net/customer/gbfs/v2/en/station_information")
+    live_metadata.add_argument("--database", default=str(DATABASE_PATH))
     prune = subparsers.add_parser("prune")
     prune.add_argument("--start-date", required=True, help="Keep data on/after YYYY-MM-DD")
     prune.add_argument("--database", default=str(DATABASE_PATH))
@@ -77,6 +86,7 @@ def main() -> None:
             args.destination,
             months,
             args.start_month,
+            args.extracted,
         ):
             print(result)
     elif args.command == "download-metadata":
@@ -99,6 +109,11 @@ def main() -> None:
             batch_size=args.batch_size,
         )
         print(report)
+    elif args.command == "import-live-metadata":
+        print(import_live_metadata(
+            initialize_database(args.database),
+            args.url,
+        ))
     elif args.command == "prune":
         print(prune_before(
             initialize_database(args.database),
