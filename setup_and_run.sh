@@ -36,9 +36,3 @@ echo "Importing station metadata..."
 
 echo "Importing station-status observations..."
 "$PYTHON" -m src.cli import --batch-size "$BATCH_SIZE"
-
-echo "Database ready: $ROOT_DIR/data/bicing.sqlite"
-echo "Starting local API at http://$API_HOST:$API_PORT ..."
-exec "$PYTHON" -m uvicorn src.api.main:app \
-    --host "$API_HOST" \
-    --port "$API_PORT"
