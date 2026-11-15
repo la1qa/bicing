@@ -308,6 +308,41 @@ python -m pytest -q
 Tests use temporary directories and temporary SQLite databases, so they do not
 modify project data.
 
+## 10. Run the geographical heatmap
+
+The heatmap is a laptop-side client. It queries the Arduino API and never
+opens the SQLite database directly. Install its separate visualization
+dependencies and launch it with:
+
+```bash
+sh run_heatmap.sh
+```
+
+Set the API address when the API is running on the UNO Q:
+
+```bash
+BICING_API_URL=http://<UNO-Q-IP>:8000 sh run_heatmap.sh
+```
+
+In PowerShell, set the environment variable separately:
+
+```powershell
+$env:BICING_API_URL = "http://10.209.202.240:8000"
+sh .\run_heatmap.sh
+```
+
+In the sidebar, select a date, then one of the actual snapshot times returned
+for that date. Choose `Available bikes` or `Available docks` and adjust the
+Gaussian bandwidth in metres. The client makes one request for the selected
+snapshot and renders a continuous KDE surface over OpenStreetMap; it does not
+draw station markers.
+
+The KDE projects WGS84 station coordinates into EPSG:25831 (ETRS89 / UTM zone
+31N), so bandwidths represent metres. Each grid cell receives the sum of
+station availability weighted by a Gaussian distance-decay kernel. Missing
+coordinates or missing metric values are excluded, and the first version uses
+a fixed Barcelona bounding box rather than computing a city boundary.
+
 ## Performance and integrity considerations
 
 SQLite uses WAL mode, a 60-second busy timeout, and foreign-key enforcement.
