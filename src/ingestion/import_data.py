@@ -8,6 +8,7 @@ import time
 from typing import Any, Iterator
 
 import pandas as pd
+from sqlalchemy import or_, select
 from sqlalchemy.dialects.sqlite import insert
 
 from src.database.db import Station, StationMetadataHistory, StationStatus, session_scope
@@ -214,6 +215,7 @@ def _records_from_frame(frame: pd.DataFrame, source_file: str, report: ImportRep
         records.append({
             "station_id": _normalize_station_id(row["station_id"]),
             "timestamp": timestamp,
+            "source": "historical",
             "source_file": source_file,
             **{
                 key: _optional_value(row.get(key))
@@ -233,7 +235,9 @@ def _insert_batch(engine, records: list[dict[str, Any]]) -> tuple[int, int]:
         session.execute(insert(Station).on_conflict_do_nothing(index_elements=["station_id"]), stations)
         result = session.execute(
             insert(StationStatus)
-            .on_conflict_do_nothing(index_elements=["station_id", "timestamp"])
+            # An older deployed database may still have the two-column
+            # uniqueness constraint; omitting the target supports both schemas.
+            .on_conflict_do_nothing()
             .returning(StationStatus.id),
             records,
         )
@@ -272,22 +276,60 @@ def _insert_metadata_batch(engine, records: list[dict[str, Any]]) -> tuple[int, 
                     "physical_configuration": station_insert.excluded.physical_configuration,
                     "last_updated": station_insert.excluded.last_updated,
                 },
+                where=or_(
+                    Station.last_updated.is_(None),
+                    Station.last_updated <= station_insert.excluded.last_updated,
+                ),
             )
         )
-        history_values = [
-            {key: row[key] for key in (
-                "station_id", "valid_from", "latitude", "longitude",
-                "capacity", "name", "physical_configuration",
-            )}
-            for row in records
-        ]
-        history_insert = (
-            insert(StationMetadataHistory)
-            .on_conflict_do_nothing(index_elements=["station_id", "valid_from"])
-            .returning(StationMetadataHistory.id)
-        )
-        inserted = len(session.execute(history_insert, history_values).scalars().all())
-    return inserted, len(records) - inserted
+        inserted = 0
+        duplicates = 0
+        for row in records:
+            exact = session.scalar(
+                select(StationMetadataHistory).where(
+                    StationMetadataHistory.station_id == row["station_id"],
+                    StationMetadataHistory.valid_from == row["valid_from"],
+                )
+            )
+            if exact is not None:
+                if _metadata_values_equal(exact, row):
+                    duplicates += 1
+                else:
+                    _copy_metadata_values(exact, row)
+                continue
+            previous = session.scalar(
+                select(StationMetadataHistory)
+                .where(
+                    StationMetadataHistory.station_id == row["station_id"],
+                    StationMetadataHistory.valid_from < row["valid_from"],
+                )
+                .order_by(StationMetadataHistory.valid_from.desc())
+                .limit(1)
+            )
+            if previous is not None and _metadata_values_equal(previous, row):
+                duplicates += 1
+                continue
+            if previous is not None:
+                previous.valid_to = row["valid_from"]
+            session.add(StationMetadataHistory(**{
+                key: row[key] for key in (
+                    "station_id", "valid_from", "latitude", "longitude",
+                    "capacity", "name", "physical_configuration",
+                )
+            }))
+            inserted += 1
+    return inserted, duplicates
+
+
+def _metadata_values_equal(existing: StationMetadataHistory, row: dict[str, Any]) -> bool:
+    return all(getattr(existing, field) == row[field] for field in (
+        "latitude", "longitude", "capacity", "name", "physical_configuration"
+    ))
+
+
+def _copy_metadata_values(existing: StationMetadataHistory, row: dict[str, Any]) -> None:
+    for field in ("latitude", "longitude", "capacity", "name", "physical_configuration"):
+        setattr(existing, field, row[field])
 
 
 def _normalize_station_id(value: Any) -> str:

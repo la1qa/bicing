@@ -32,6 +32,11 @@ def main() -> None:
     download_metadata = subparsers.add_parser("download-metadata")
     download_metadata.add_argument("--destination", default=str(METADATA_ARCHIVE_DIR))
     download_metadata.add_argument("--month", action="append", help="Month such as 2026_01; repeat for multiple months")
+    download_metadata.add_argument(
+        "--latest",
+        action="store_true",
+        help="Download only the newest metadata month",
+    )
     importer = subparsers.add_parser("import")
     importer.add_argument("--source")
     importer.add_argument("--database", default=str(DATABASE_PATH))
@@ -60,7 +65,7 @@ def main() -> None:
             print(result)
     elif args.command == "download-metadata":
         months = set(args.month) if args.month else None
-        for result in download_metadata_archives(args.destination, months):
+        for result in download_metadata_archives(args.destination, months, args.latest):
             print(result)
     elif args.command == "import":
         source = args.source or (

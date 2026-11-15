@@ -80,8 +80,12 @@ class StationStatus(Base):
 
     __tablename__ = "station_status"
     __table_args__ = (
-        UniqueConstraint("station_id", "timestamp", name="uq_station_status_observation"),
+        UniqueConstraint(
+            "station_id", "timestamp", "source",
+            name="uq_station_status_observation",
+        ),
         Index("ix_station_status_station_timestamp", "station_id", "timestamp"),
+        Index("ix_station_status_timestamp_source", "timestamp", "source"),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -90,6 +94,7 @@ class StationStatus(Base):
         index=True,
     )
     timestamp: Mapped[datetime] = mapped_column(UTCDateTime, index=True)
+    source: Mapped[str] = mapped_column(String, default="unknown", server_default="unknown")
     mechanical_bikes_available: Mapped[Optional[int]] = mapped_column(Integer)
     ebikes_available: Mapped[Optional[int]] = mapped_column(Integer)
     docks_available: Mapped[Optional[int]] = mapped_column(Integer)
@@ -152,7 +157,20 @@ def initialize_database(path: str | Path) -> Engine:
     """Create the database and current schema if they do not exist."""
     engine = create_engine_for(path)
     Base.metadata.create_all(engine)
+    _migrate_existing_schema(engine)
     return engine
+
+
+def _migrate_existing_schema(engine: Engine) -> None:
+    """Apply additive changes needed by databases created before source support."""
+    from sqlalchemy import inspect, text
+
+    columns = {column["name"] for column in inspect(engine).get_columns("station_status")}
+    if "source" not in columns:
+        with engine.begin() as connection:
+            connection.execute(
+                text("ALTER TABLE station_status ADD COLUMN source VARCHAR DEFAULT 'unknown'")
+            )
 
 
 @contextmanager

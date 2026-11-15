@@ -91,6 +91,12 @@ Download only a selected month:
 python -m src.cli download-metadata --month 2026_01
 ```
 
+For the normal pipeline, download only the newest metadata archive:
+
+```bash
+python -m src.cli download-metadata --latest
+```
+
 Files are saved under `data/raw/metadata/`, are never overwritten, and are
 downloaded through temporary `.part` files so interrupted downloads are not
 mistaken for complete archives. Extract them separately:
@@ -121,6 +127,36 @@ python -m src.cli import-metadata
 This updates `stations` with the latest metadata encountered and inserts
 non-duplicate versions into `station_metadata_history`.
 
+### Run the complete pipeline
+
+On Linux or the Arduino UNO Q, run:
+
+```bash
+chmod +x setup_and_run.sh
+./setup_and_run.sh
+```
+
+The script downloads all available station-status archives but only the newest
+station-metadata archive, then extracts and imports both datasets. Every step
+is repeatable: existing downloads are not overwritten, completed extractions
+are skipped, and database uniqueness rules skip already imported records.
+Use `BICING_BATCH_SIZE=1000 ./setup_and_run.sh` to change the import batch size.
+
+The metadata downloader remains history-capable. To build a metadata history
+study later, run `python -m src.cli download-metadata` without `--latest`,
+then extract and import the additional archives.
+
+The script also creates `.venv`, installs `requirements.txt`, and starts the
+FastAPI server after the database is ready. Configure the server with:
+
+```bash
+BICING_API_HOST=0.0.0.0 BICING_API_PORT=8000 ./setup_and_run.sh
+```
+
+The default host is `0.0.0.0`, which allows access from another machine on the
+LAN. Stop the API with `Ctrl+C`; rerunning the script skips existing downloads,
+completed extractions, and already imported records.
+
 ## 5. Import extracted files
 
 Import all supported CSV and JSON files recursively with the CLI:
@@ -142,8 +178,9 @@ The report contains:
 - `errors`: unsupported or invalid source details.
 - parsing, validation, insertion, total duration, and records/second metrics.
 
-Imports are repeatable. The unique `(station_id, timestamp)` constraint
-prevents the same observation from being inserted twice.
+Imports are repeatable. The unique `(station_id, timestamp, source)` constraint
+prevents the same source observation from being inserted twice while allowing
+historical and live sources to share a timestamp.
 
 CSV files are read in chunks, so a 296 MB source file is not loaded entirely
 into memory. Each batch is inserted with SQLAlchemy Core bulk insertion and
@@ -175,8 +212,18 @@ Endpoints:
 
 - `GET /health`
 - `GET /stations?limit=100&offset=0`
+- `GET /stations/{station_id}`
 - `GET /stations/{station_id}/status?limit=100&start=...&end=...`
+- `GET /stations/{station_id}/changes?start=...&end=...`
+- `GET /snapshots?start=...&end=...`
+- `GET /snapshots/{timestamp}` (joins metadata valid at that timestamp)
 - `GET /stats`
+
+`/stations` exposes current metadata. `/snapshots/{timestamp}` exposes the
+status observations at one UTC timestamp and resolves the matching historical
+metadata version when available, falling back to current station metadata.
+`/stations/{station_id}/changes` reports net differences from the previous
+stored observation; these differences are not exact journey counts.
 
 For access from another computer on the same network, bind to all interfaces:
 

@@ -30,11 +30,22 @@ class DownloadResult:
 def download_metadata_archives(
     destination: str | Path,
     months: set[str] | None = None,
+    latest_only: bool = False,
 ) -> list[DownloadResult]:
-    """Download metadata archives discovered from CKAN, without overwriting files."""
+    """Download metadata archives without overwriting existing files.
+
+    ``latest_only`` selects the newest ``YYYY_MM`` resource while retaining
+    the full-resource behavior for historical metadata studies.
+    """
     target = Path(destination)
     target.mkdir(parents=True, exist_ok=True)
     resources = _metadata_resources()
+    if latest_only and resources:
+        latest_month = max(resource["name"][:7] for resource in resources)
+        resources = [
+            resource for resource in resources
+            if resource["name"][:7] == latest_month
+        ]
     results: list[DownloadResult] = []
     for resource in resources:
         name = resource["name"]

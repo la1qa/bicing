@@ -14,7 +14,7 @@ from src.database.db import (
     session_scope,
 )
 from src.ingestion.import_data import import_files, import_metadata_files
-from src.ingestion.download import _timeline_resources
+from src.ingestion.download import _timeline_resources, download_metadata_archives
 from src.processing.transformations import normalize_timestamp
 from src.processing.validation import validate_status_frame
 from src.api.main import create_app
@@ -69,8 +69,35 @@ def test_metadata_import_populates_current_and_history(tmp_path):
         assert session.query(StationMetadataHistory).count() == 1
 
 
+def test_metadata_import_closes_changed_history_interval(tmp_path):
+    first = tmp_path / "01_metadata.csv"
+    second = tmp_path / "02_metadata.csv"
+    first.write_text(
+        "station_id,name,lat,lon,capacity,last_updated\n"
+        "1,Old,41.1,2.1,20,1714514400\n",
+        encoding="utf-8",
+    )
+    second.write_text(
+        "station_id,name,lat,lon,capacity,last_updated\n"
+        "1,New,41.2,2.2,25,1714600800\n",
+        encoding="utf-8",
+    )
+    engine = initialize_database(tmp_path / "metadata-history.sqlite")
+    assert import_metadata_files(engine, tmp_path).imported == 2
+    with session_scope(engine) as session:
+        history = session.query(StationMetadataHistory).order_by(
+            StationMetadataHistory.valid_from
+        ).all()
+        assert len(history) == 2
+        assert history[0].valid_to == history[1].valid_from
+        assert history[1].valid_to is None
+
+
 def test_timeline_resource_discovery_selects_status_archives(monkeypatch):
     class Response:
+        def __init__(self):
+            self.read_once = False
+
         def __enter__(self):
             return self
 
@@ -89,6 +116,24 @@ def test_timeline_resource_discovery_selects_status_archives(monkeypatch):
         "name": "2026_05_Maig_BicingNou_ESTACIONS.7z",
         "url": "status",
     }]
+
+
+def test_latest_metadata_download_only_selects_newest_month(tmp_path, monkeypatch):
+    monkeypatch.setattr(
+        "src.ingestion.download._metadata_resources",
+        lambda: [
+            {"name": "2025_12_Desembre_BicingNou_INFORMACIO.7z", "url": "old"},
+            {"name": "2026_05_Maig_BicingNou_INFORMACIO.7z", "url": "latest"},
+        ],
+    )
+    latest = tmp_path / "2026_05_Maig_BicingNou_INFORMACIO.7z"
+    latest.write_bytes(b"already downloaded")
+    results = download_metadata_archives(tmp_path, latest_only=True)
+    assert [result.name for result in results] == [
+        "2026_05_Maig_BicingNou_INFORMACIO.7z"
+    ]
+    assert results[0].downloaded is False
+    assert latest.read_bytes() == b"already downloaded"
 
 
 def test_database_schema_has_composite_status_index(tmp_path):
@@ -177,3 +222,56 @@ def test_api_health_stats_and_timestamp_filtering(tmp_path):
     response = client.get("/stations/1/status?start=2024-01-02T00:00:00Z")
     assert response.status_code == 200
     assert len(response.json()["items"]) == 1
+
+
+def test_temporal_api_snapshot_station_and_changes(tmp_path):
+    database = tmp_path / "temporal-api.sqlite"
+    engine = initialize_database(database)
+    first = datetime(2024, 1, 1, tzinfo=timezone.utc)
+    second = datetime(2024, 1, 2, tzinfo=timezone.utc)
+    with session_scope(engine) as session:
+        session.add(Station(
+            station_id="1", name="Current", latitude=41.2, longitude=2.2, capacity=25
+        ))
+        session.add_all([
+            StationMetadataHistory(
+                station_id="1", valid_from=first, valid_to=second,
+                name="Old", latitude=41.1, longitude=2.1, capacity=20,
+            ),
+            StationMetadataHistory(
+                station_id="1", valid_from=second,
+                name="Current", latitude=41.2, longitude=2.2, capacity=25,
+            ),
+            StationStatus(
+                station_id="1", timestamp=first,
+                mechanical_bikes_available=2, ebikes_available=1, docks_available=5,
+            ),
+            StationStatus(
+                station_id="1", timestamp=second,
+                mechanical_bikes_available=4, ebikes_available=0, docks_available=3,
+            ),
+        ])
+    client = TestClient(create_app(database))
+    assert client.get("/stations/1").json()["name"] == "Current"
+    assert len(client.get("/snapshots").json()["items"]) == 2
+    snapshot = client.get("/snapshots/2024-01-01T00:00:00Z").json()
+    assert snapshot["items"][0]["name"] == "Old"
+    assert snapshot["items"][0]["capacity"] == 20
+    changes = client.get("/stations/1/changes").json()["items"]
+    assert changes[0]["mechanical_bikes_change"] is None
+    assert changes[1]["mechanical_bikes_change"] == 2
+    assert changes[1]["ebikes_change"] == -1
+    assert changes[1]["docks_change"] == -2
+
+
+def test_status_source_allows_same_timestamp_from_distinct_sources(tmp_path):
+    engine = initialize_database(tmp_path / "sources.sqlite")
+    timestamp = datetime(2024, 1, 1, tzinfo=timezone.utc)
+    with session_scope(engine) as session:
+        session.add(Station(station_id="1"))
+        session.add_all([
+            StationStatus(station_id="1", timestamp=timestamp, source="historical"),
+            StationStatus(station_id="1", timestamp=timestamp, source="live"),
+        ])
+    with session_scope(engine) as session:
+        assert session.query(StationStatus).count() == 2
