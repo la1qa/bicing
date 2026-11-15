@@ -1,0 +1,7 @@
+SQLAlchemy>=2.0,<3
+pandas>=2.0,<3
+py7zr>=0.20,<1
+pytest>=7,<9
+fastapi>=0.110,<1
+uvicorn>=0.29,<1
+httpx2>=0.1
