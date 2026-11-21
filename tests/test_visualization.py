@@ -4,7 +4,41 @@ from src.visualization.heatmap import (
     StationObservation,
     fetch_snapshot,
     gaussian_kde,
+    snapshot_timestamps,
 )
+
+
+def test_snapshot_timestamps_fetches_every_api_page(monkeypatch):
+    calls = []
+
+    class Response:
+        def __init__(self, items):
+            self.payload = {"items": items}
+
+        def raise_for_status(self):
+            pass
+
+        def json(self):
+            return self.payload
+
+    def fake_get(url, params, timeout):
+        calls.append((url, params, timeout))
+        if params["offset"] == 0:
+            items = [{"timestamp": f"2024-01-01T{i:02d}:00:00Z"} for i in range(500)]
+        else:
+            items = [{"timestamp": "2024-01-02T00:00:00Z"}]
+        return Response(items)
+
+    monkeypatch.setattr(
+        "src.visualization.heatmap.requests.get",
+        fake_get,
+    )
+
+    timestamps = snapshot_timestamps("http://api.test")
+
+    assert len(timestamps) == 501
+    assert timestamps[-1] == "2024-01-02T00:00:00Z"
+    assert [call[1]["offset"] for call in calls] == [0, 500]
 
 
 def test_gaussian_kde_uses_projected_bandwidth_and_metric_weights():

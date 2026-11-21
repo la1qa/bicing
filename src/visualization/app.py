@@ -1,6 +1,5 @@
 """Streamlit UI for exploring one Bicing snapshot at a time."""
 
-from datetime import date
 import os
 
 import streamlit as st
@@ -12,7 +11,7 @@ from src.visualization.heatmap import (
     gaussian_kde,
     fetch_snapshot,
     render_heatmap,
-    snapshot_dates,
+    snapshot_timestamps,
 )
 from src.visualization.distance import distance_accessibility
 
@@ -22,9 +21,9 @@ st.caption("Continuous KDE surface; station markers are intentionally omitted.")
 
 
 @st.cache_data(ttl=300)
-def cached_snapshot_dates(api_url: str, selected_date: date) -> list[str]:
-    """Cache the small date-level snapshot lookup briefly."""
-    return snapshot_dates(api_url, selected_date)
+def cached_snapshot_timestamps(api_url: str) -> list[str]:
+    """Cache every available snapshot timestamp for the session."""
+    return snapshot_timestamps(api_url)
 
 
 @st.cache_data(ttl=300)
@@ -48,7 +47,6 @@ with st.sidebar:
         "Bicing API URL",
         os.environ.get("BICING_API_URL", "http://127.0.0.1:8000"),
     )
-    selected_date = st.date_input("Snapshot date", value=date(2024, 1, 1))
     mode = st.selectbox(
         "Spatial analysis",
         options=["gaussian", "distance"],
@@ -84,7 +82,7 @@ with st.sidebar:
             "Gaussian bandwidth (metres)",
             min_value=100,
             max_value=3000,
-            value=750,
+            value=250,
             step=50,
         )
     else:
@@ -95,13 +93,13 @@ with st.sidebar:
         )
 
 try:
-    timestamps = cached_snapshot_dates(api_url, selected_date)
+    timestamps = cached_snapshot_timestamps(api_url)
 except Exception as exc:
     st.error(f"Could not retrieve snapshots: {exc}")
     st.stop()
 
 if not timestamps:
-    st.info("No stored snapshots are available for this date.")
+    st.info("No stored snapshots are available.")
     st.stop()
 
 selected_timestamp = st.selectbox(
