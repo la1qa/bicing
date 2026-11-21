@@ -1,14 +1,17 @@
+from datetime import date, datetime, timezone
+
 import numpy as np
 
 from src.visualization.heatmap import (
     StationObservation,
     fetch_snapshot,
     gaussian_kde,
-    snapshot_timestamps,
+    snapshot_dates,
+    snapshot_dates_for_range,
 )
 
 
-def test_snapshot_timestamps_fetches_every_api_page(monkeypatch):
+def test_snapshot_dates_queries_only_the_selected_day(monkeypatch):
     calls = []
 
     class Response:
@@ -23,22 +26,51 @@ def test_snapshot_timestamps_fetches_every_api_page(monkeypatch):
 
     def fake_get(url, params, timeout):
         calls.append((url, params, timeout))
-        if params["offset"] == 0:
-            items = [{"timestamp": f"2024-01-01T{i:02d}:00:00Z"} for i in range(500)]
-        else:
-            items = [{"timestamp": "2024-01-02T00:00:00Z"}]
-        return Response(items)
+        return Response([{"timestamp": "2024-01-02T00:00:00Z"}])
 
     monkeypatch.setattr(
         "src.visualization.heatmap.requests.get",
         fake_get,
     )
 
-    timestamps = snapshot_timestamps("http://api.test")
+    timestamps = snapshot_dates("http://api.test", date(2024, 1, 2))
+
+    assert timestamps == ["2024-01-02T00:00:00Z"]
+    assert calls[0][1]["start"].startswith("2024-01-02")
+    assert calls[0][1]["end"].startswith("2024-01-03")
+
+
+def test_snapshot_range_fetches_all_pages(monkeypatch):
+    calls = []
+
+    class Response:
+        def __init__(self, items):
+            self.payload = {"items": items}
+
+        def raise_for_status(self):
+            pass
+
+        def json(self):
+            return self.payload
+
+    def fake_get(url, params, timeout):
+        calls.append(params)
+        if params["offset"] == 0:
+            items = [{"timestamp": f"2024-01-{day:02d}T00:00:00Z"} for day in range(1, 501)]
+        else:
+            items = [{"timestamp": "2024-02-01T00:00:00Z"}]
+        return Response(items)
+
+    monkeypatch.setattr("src.visualization.heatmap.requests.get", fake_get)
+
+    timestamps = snapshot_dates_for_range(
+        "http://api.test",
+        datetime(2024, 1, 1, tzinfo=timezone.utc),
+        datetime(2024, 2, 1, tzinfo=timezone.utc),
+    )
 
     assert len(timestamps) == 501
-    assert timestamps[-1] == "2024-01-02T00:00:00Z"
-    assert [call[1]["offset"] for call in calls] == [0, 500]
+    assert [call["offset"] for call in calls] == [0, 500]
 
 
 def test_gaussian_kde_uses_projected_bandwidth_and_metric_weights():

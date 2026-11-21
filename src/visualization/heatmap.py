@@ -1,6 +1,7 @@
 """Snapshot retrieval and projected Gaussian KDE rendering for Bicing."""
 
 from dataclasses import dataclass
+from datetime import date, datetime, timedelta, timezone
 from typing import Literal
 
 import folium
@@ -55,8 +56,32 @@ def _api_json(base_url: str, path: str, params: dict[str, str | int]) -> dict:
     return payload
 
 
-def snapshot_timestamps(base_url: str) -> list[str]:
-    """Return every distinct snapshot timestamp, following API pagination."""
+def snapshot_dates(base_url: str, selected_date: date) -> list[str]:
+    """Return snapshot timestamps available on one UTC calendar date."""
+    start = datetime.combine(selected_date, datetime.min.time(), tzinfo=timezone.utc)
+    end = start + timedelta(days=1)
+    payload = _api_json(
+        base_url,
+        "/snapshots",
+        {
+            "start": start.isoformat().replace("+00:00", "Z"),
+            "end": end.isoformat().replace("+00:00", "Z"),
+            "limit": 500,
+        },
+    )
+    return [
+        item["timestamp"]
+        for item in payload.get("items", [])
+        if isinstance(item, dict) and item.get("timestamp")
+    ]
+
+
+def snapshot_dates_for_range(
+    base_url: str,
+    start: datetime,
+    end: datetime,
+) -> list[str]:
+    """Return snapshot timestamps in an explicit UTC range."""
     timestamps: list[str] = []
     limit = 500
     offset = 0
@@ -64,17 +89,21 @@ def snapshot_timestamps(base_url: str) -> list[str]:
         payload = _api_json(
             base_url,
             "/snapshots",
-            {"limit": limit, "offset": offset},
+            {
+                "start": start.isoformat().replace("+00:00", "Z"),
+                "end": end.isoformat().replace("+00:00", "Z"),
+                "limit": limit,
+                "offset": offset,
+            },
         )
         items = payload.get("items", [])
         if not isinstance(items, list):
             break
-        page = [
+        timestamps.extend([
             item["timestamp"]
             for item in items
             if isinstance(item, dict) and item.get("timestamp")
-        ]
-        timestamps.extend(page)
+        ])
         if len(items) < limit:
             break
         offset += limit
