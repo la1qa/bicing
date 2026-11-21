@@ -83,15 +83,17 @@ with st.sidebar:
         bandwidth_m = st.slider(
             "Gaussian bandwidth (metres)",
             min_value=100,
-            max_value=3000,
-            value=750,
+            max_value=1000,
+            value=250,
             step=50,
         )
     else:
-        distance_m = st.selectbox(
+        distance_m = st.slider(
             "Distance threshold (metres)",
-            options=[100, 250, 500, 1000],
-            index=1,
+            min_value=100,
+            max_value=1000,
+            value=400,
+            step=50,
         )
 
 try:
