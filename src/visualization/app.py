@@ -14,11 +14,7 @@ from src.visualization.heatmap import (
     render_heatmap,
     snapshot_dates,
 )
-from src.visualization.walking import (
-    aggregate_accessibility,
-    build_reachability_index,
-    load_walking_graph,
-)
+from src.visualization.distance import distance_accessibility
 
 st.set_page_config(page_title="Bicing availability heatmap", layout="wide")
 st.title("Bicing geographical availability heatmap")
@@ -47,12 +43,6 @@ def cached_kde(
     return gaussian_kde(list(observations), metric, bandwidth_m)
 
 
-@st.cache_resource
-def cached_walking_graph(cache_path: str):
-    """Cache the downloaded/projected pedestrian graph for the session."""
-    return load_walking_graph(cache_path)
-
-
 with st.sidebar:
     api_url = st.text_input(
         "Bicing API URL",
@@ -61,11 +51,11 @@ with st.sidebar:
     selected_date = st.date_input("Snapshot date", value=date(2024, 1, 1))
     mode = st.selectbox(
         "Spatial analysis",
-        options=["gaussian", "walking"],
+        options=["gaussian", "distance"],
         format_func=lambda value: (
             "Gaussian spatial intensity"
             if value == "gaussian"
-            else "Walking-time accessibility"
+            else "Straight-line distance accessibility"
         ),
     )
     metric = st.selectbox(
@@ -98,17 +88,10 @@ with st.sidebar:
             step=50,
         )
     else:
-        walking_minutes = st.selectbox(
-            "Walking-time threshold (minutes)",
-            options=[2, 5, 10, 15],
+        distance_m = st.selectbox(
+            "Distance threshold (metres)",
+            options=[100, 250, 500, 1000],
             index=1,
-        )
-        graph_cache_path = st.text_input(
-            "Walking graph cache",
-            os.environ.get(
-                "BICING_WALKING_GRAPH_CACHE",
-                "data/processed/barcelona_walk.graphml",
-            ),
         )
 
 try:
@@ -134,29 +117,13 @@ if mode == "gaussian":
     legend_caption = None
     render_bandwidth = bandwidth_m
 else:
-    with st.status("Preparing walking accessibility...", expanded=True) as status:
-        status.write("Loading or downloading the pedestrian network...")
-        graph = cached_walking_graph(graph_cache_path)
-        progress = st.progress(0, text="Calculating station reachability...")
-
-        def update_progress(done: int, total: int) -> None:
-            progress.progress(
-                done / total if total else 1.0,
-                text=f"Calculating station reachability ({done}/{total})",
-            )
-
-        index = build_reachability_index(
-            graph,
-            list(observations),
-            walking_minutes,
-            cache_path=graph_cache_path,
-            progress_callback=update_progress,
-        )
-        values, bounds = aggregate_accessibility(index, list(observations), metric)
-        progress.empty()
-        status.update(label="Walking accessibility ready", state="complete")
-    legend_caption = f"{metric.replace('_', ' ').title()} within {walking_minutes} minutes"
-    render_bandwidth = walking_minutes * 60
+    values, bounds = distance_accessibility(
+        list(observations),
+        metric,
+        distance_m,
+    )
+    legend_caption = f"{metric.replace('_', ' ').title()} within {distance_m} metres"
+    render_bandwidth = distance_m
 heatmap = render_heatmap(
     values,
     bounds,
@@ -167,8 +134,8 @@ heatmap = render_heatmap(
 )
 html(heatmap.get_root().render(), height=760, scrolling=False)
 st.caption(f"Included {len(observations)} stations with valid coordinates.")
-if mode == "walking":
+if mode == "distance":
     st.caption(
-        "Accessibility is the sum of availability at all stations reachable "
-        "within the selected walking time; it is not a journey count."
+        "Accessibility is the sum of availability at all stations included "
+        "within the selected straight-line distance; it is not a journey count."
     )
