@@ -9,7 +9,6 @@ from folium.raster_layers import ImageOverlay
 import numpy as np
 from PIL import Image
 import requests
-from branca.colormap import LinearColormap
 from pyproj import Transformer
 
 Metric = Literal[
@@ -18,9 +17,11 @@ Metric = Literal[
     "available_bikes",
     "available_docks",
 ]
-BARCELONA_BOUNDS = (2.05, 2.25, 41.30, 41.47)
+BARCELONA_BOUNDS = (2.07, 2.25, 41.32, 41.47)
 PROJECTED_CRS = "EPSG:25831"
 WGS84 = "EPSG:4326"
+GAUSSIAN_LEGEND_VMAX = 200.0
+DISTANCE_LEGEND_VMAX = 200.0
 _TO_PROJECTED = Transformer.from_crs(WGS84, PROJECTED_CRS, always_xy=True)
 
 
@@ -190,14 +191,39 @@ def render_heatmap(
     timestamp: str,
     bandwidth_m: float,
     legend_caption: str | None = None,
+    legend_vmin: float = 0.0,
+    legend_vmax: float | None = None,
 ) -> folium.Map:
     """Render a KDE grid as a smooth Folium image overlay."""
+    if legend_vmax is not None and legend_vmax <= legend_vmin:
+        raise ValueError("legend_vmax must be greater than legend_vmin")
     west, east, south, north = bounds
     center = [(south + north) / 2, (west + east) / 2]
-    fmap = folium.Map(location=center, zoom_start=12, tiles="OpenStreetMap")
-    maximum = float(values.max())
+    fmap = folium.Map(
+        location=center,
+        zoom_start=12,
+        min_zoom=11,
+        max_zoom=14,
+        max_bounds=[[south, west], [north, east]],
+        zoom_control=True,
+        scroll_wheel_zoom=True,
+        dragging=False,
+        touch_zoom=True,
+        double_click_zoom=True,
+        box_zoom=True,
+        keyboard=False,
+        tiles="OpenStreetMap",
+    )
+    fmap.fit_bounds([[south, west], [north, east]], padding=(0, 0))
+    maximum = float(values.max()) if values.size else 0.0
+    color_vmax = (
+        legend_vmax
+        if legend_vmax is not None
+        else max(maximum, legend_vmin + 1.0)
+    )
     if maximum > 0:
-        rgba = _gradient(values / maximum)
+        normalized = (values - legend_vmin) / (color_vmax - legend_vmin)
+        rgba = _gradient(normalized)
         image = Image.fromarray(rgba, mode="RGBA")
         ImageOverlay(
             image=np.asarray(image),
@@ -207,12 +233,36 @@ def render_heatmap(
             cross_origin=False,
             zindex=2,
         ).add_to(fmap)
-        LinearColormap(
-            colors=["#313695", "#74add1", "#fee090", "#f46d43", "#a50026"],
-            vmin=0,
-            vmax=maximum,
-            caption=legend_caption or _metric_label(metric),
-        ).add_to(fmap)
+    legend_title = legend_caption or _metric_label(metric)
+    upper_label = f"&gt;{color_vmax:g}" if legend_vmax is not None else f"&gt;{color_vmax:g}"
+    middle_values = [
+        f"{legend_vmin:g}",
+        f"{legend_vmin + (color_vmax - legend_vmin) * 0.25:g}",
+        f"{legend_vmin + (color_vmax - legend_vmin) * 0.5:g}",
+        f"{legend_vmin + (color_vmax - legend_vmin) * 0.75:g}",
+        upper_label,
+    ]
+    fmap.get_root().html.add_child(
+        folium.Element(
+            """
+<div style="position:absolute; right:16px; bottom:28px; z-index:9999;
+            width:220px; padding:8px 10px 7px; background:rgba(255,255,255,0.92);
+            border-radius:4px; box-shadow:0 1px 5px rgba(0,0,0,0.35);
+            color:#222; font-family:Arial,sans-serif; font-size:12px;">
+"""
+            f"<div style=\"margin-bottom:5px; font-weight:600;\">{legend_title}</div>"
+            """
+<div style="height:10px; border:1px solid rgba(0,0,0,0.15);
+            background:linear-gradient(to right,#313695,#74add1,#fee090,#f46d43,#a50026);"></div>
+"""
+            "<div style=\"display:flex; justify-content:space-between; margin-top:3px;\">"
+            + "".join(
+                f"<span>{label}</span>"
+                for label in middle_values
+            )
+            + "</div></div>"
+        )
+    )
     folium.LayerControl().add_to(fmap)
     fmap.get_root().header.add_child(
         folium.Element(
@@ -243,7 +293,10 @@ def _gradient(values: np.ndarray) -> np.ndarray:
         np.interp(clipped, positions, stops[:, channel])
         for channel in range(3)
     ]
-    rgba = np.stack(channels + [np.where(values > 0, 220, 0)], axis=-1)
+    rgba = np.stack(
+        channels + [np.where(clipped > 1e-6, 220, 0)],
+        axis=-1,
+    )
     return rgba.astype(np.uint8)
 
 

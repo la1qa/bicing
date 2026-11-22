@@ -9,6 +9,8 @@ from streamlit.components.v1 import html
 from src.visualization.heatmap import (
     StationObservation,
     Metric,
+    DISTANCE_LEGEND_VMAX,
+    GAUSSIAN_LEGEND_VMAX,
     gaussian_kde,
     fetch_snapshot,
     render_heatmap,
@@ -67,20 +69,18 @@ with st.sidebar:
     metric = st.selectbox(
         "Metric",
         options=(
-            ["available_bikes", "available_docks"]
-            if mode == "gaussian"
-            else [
+            [
+                "available_bikes",
                 "mechanical_bikes",
                 "ebikes",
-                "available_bikes",
                 "available_docks",
             ]
         ),
         format_func=lambda value: (
             {
+                "available_bikes": "Total available bikes",
                 "mechanical_bikes": "Mechanical bikes",
                 "ebikes": "E-bikes",
-                "available_bikes": "Total available bikes",
                 "available_docks": "Available docks",
             }[value]
         ),
@@ -89,7 +89,7 @@ with st.sidebar:
         bandwidth_m = st.slider(
             "Gaussian bandwidth (metres)",
             min_value=100,
-            max_value=1000,
+            max_value=600,
             value=250,
             step=50,
         )
@@ -116,9 +116,10 @@ minute_options = sorted({
     datetime.fromisoformat(timestamp.replace("Z", "+00:00")).strftime("%H:%M")
     for timestamp in timestamps
 })
-selected_minute = st.selectbox(
+selected_minute = st.select_slider(
     "Time (UTC)",
-    minute_options,
+    options=minute_options,
+    value=minute_options[0],
     key=f"snapshot-time-{selected_date.isoformat()}",
 )
 selected_hour, selected_minute_number = map(int, selected_minute.split(":"))
@@ -135,6 +136,7 @@ if mode == "gaussian":
     values, bounds = cached_kde(observations, metric, bandwidth_m)
     legend_caption = None
     render_bandwidth = bandwidth_m
+    legend_vmax = GAUSSIAN_LEGEND_VMAX
 else:
     values, bounds = distance_accessibility(
         list(observations),
@@ -143,6 +145,7 @@ else:
     )
     legend_caption = f"{metric.replace('_', ' ').title()} within {distance_m} metres"
     render_bandwidth = distance_m
+    legend_vmax = DISTANCE_LEGEND_VMAX
 heatmap = render_heatmap(
     values,
     bounds,
@@ -150,6 +153,8 @@ heatmap = render_heatmap(
     timestamp=selected_timestamp,
     bandwidth_m=render_bandwidth,
     legend_caption=legend_caption,
+    legend_vmin=0,
+    legend_vmax=legend_vmax,
 )
 html(heatmap.get_root().render(), height=760, scrolling=False)
 st.caption(f"Included {len(observations)} stations with valid coordinates.")

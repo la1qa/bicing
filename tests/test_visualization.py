@@ -3,12 +3,59 @@ from datetime import date, datetime, timezone
 import numpy as np
 
 from src.visualization.heatmap import (
+    DISTANCE_LEGEND_VMAX,
     StationObservation,
+    _gradient,
     fetch_snapshot,
     gaussian_kde,
+    render_heatmap,
     snapshot_dates,
     snapshot_dates_for_range,
 )
+
+
+def test_gradient_makes_zero_values_transparent():
+    rgba = _gradient(np.asarray([0.0, 0.0001, 0.5]))
+    assert rgba[0, 3] == 0
+    assert rgba[1, 3] == 220
+    assert rgba[2, 3] == 220
+
+
+def test_distance_legend_uses_250_plus_limit():
+    assert DISTANCE_LEGEND_VMAX == 250.0
+    heatmap = render_heatmap(
+        np.asarray([[0.0, 250.0], [300.0, 300.0]]),
+        (2.05, 2.25, 41.30, 41.47),
+        metric="available_bikes",
+        timestamp="2024-01-02T00:00:00Z",
+        bandwidth_m=400,
+        legend_caption="Available Bikes within 400 metres",
+        legend_vmin=0,
+        legend_vmax=DISTANCE_LEGEND_VMAX,
+    )
+    html = heatmap.get_root().render()
+    assert "Available Bikes within 400 metres</div>" in html
+    assert "&gt;250" in html
+
+
+def test_render_heatmap_uses_fixed_legend_range():
+    values = np.asarray([[0.0, 50.0], [100.0, 100.0]])
+    heatmap = render_heatmap(
+        values,
+        (2.05, 2.25, 41.30, 41.47),
+        metric="available_bikes",
+        timestamp="2024-01-02T00:00:00Z",
+        bandwidth_m=250,
+        legend_vmin=0,
+        legend_vmax=100,
+    )
+    html = heatmap.get_root().render()
+    assert '"vmax":100.0' in html
+    assert "&gt;100" in html
+    assert "[41.3, 2.05]" in html
+    assert "[41.47, 2.25]" in html
+    assert '"dragging": false' in html
+    assert '"touchZoom": true' in html
 
 
 def test_snapshot_dates_queries_only_the_selected_day(monkeypatch):
